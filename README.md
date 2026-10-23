@@ -77,7 +77,7 @@ The data are loaded as plain `<script>` files (`window.HL_DATA = …`), so the p
 
 The workflow in `.github/workflows/deploy.yml` publishes the site on every push to `main`.
 In the repository go to **Settings → Pages → Build and deployment → Source: GitHub Actions**, push, and the site
-appears at `https://<your-account>.github.io/brazos-healthlens/`.
+appears at `https://diviyabhavaani-mb.github.io/brazos-healthlens/`.
 
 ## Rebuild the data (optional)
 
