@@ -1,0 +1,14 @@
+# raw downloads and intermediate files from the pipeline (re-create with pipeline/download.py)
+pipeline/raw/*
+!pipeline/raw/README.md
+pipeline/work/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+shots/
