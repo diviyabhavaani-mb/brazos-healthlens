@@ -4,14 +4,11 @@
 
 CSCE 679 Data Visualization · Texas A&M University · Fall 2026 · **Graduate Team 6**
 
-| Team member | Role |
-|---|---|
-| Diviya Bhavaani M B | Design, data processing, implementation, evaluation |
-| Manogna Rayala | Design, data processing, implementation, evaluation |
-| Seo Hyeon Beom | Design, data processing, implementation, evaluation |
-| Alexis Santiago | Design, data processing, implementation, evaluation |
-
-All four members share the work equally; there is no team lead.
+Design, data processing, implementation, evaluation is done by the below team members : 
+1. Diviya Bhavaani Meenakkshi Sundar Banumathy
+2. Manogna Rayala 
+3. Seo Hyeon Beom 
+4. Alexis Santiago 
 
 ![Map & profile tab](docs/screenshots/tab_map.jpg)
 
