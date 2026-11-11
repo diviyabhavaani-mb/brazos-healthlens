@@ -1,9 +1,11 @@
 // Brazos HealthLens · Tab 6 "Methods & data" and the page footer.
 "use strict";
+
 const TEAM = "Diviya Bhavaani M B · Manogna Rayala · Seo Hyeon Beom · Alexis Santiago";
-function drawMethods(){
-  const mt=D.meta, ev=mt.pca_ev_top3;
-  const y22=Object.entries(mt.years).filter(([k,v])=>v===2022).map(([k])=>MID[k]? MID[k].short:k).join(", ");
+
+function drawMethods() {
+  const mt = D.meta, ev = mt.pca_ev_top3;
+  const y22 = Object.entries(mt.years).filter(([k, v]) => v === 2022).map(([k]) => MID[k] ? MID[k].short : k).join(", ");
   d3.select("#methods").html(`
 <h3>Requirements and where they live</h3>
 <p>${rqBadge("R1")} Explore where: Map &amp; profile tab, search. ${rqBadge("R2")} Compare a tract's full profile: tract profile, Compare measures tab. ${rqBadge("R3")} Find similar and unusual tracts: Similar &amp; unusual tab, profile-group map mode. ${rqBadge("R4")} Judge reliability and context: CI whiskers, ⚠ flags, CI-width map mode, urban–rural filter. ${rqBadge("R5")} Find care gaps: Care gaps tab. The Survey &amp; requirements tab shows the survey evidence for each one.</p>
@@ -30,9 +32,10 @@ function drawMethods(){
 <h3>Engineering</h3>
 <p>Preprocessing in Python (<code>pipeline/</code>: pandas, GeoPandas, scikit-learn, topojson). Rendering with D3.js v7.9: maps on HTML canvas with spatial-grid picking (${fmtInt(mt.ngeom)} polygons) and a county layer when zoomed out; parallel coordinates and scatterplots on canvas with SVG axes and D3 brushes. One shared state store links every view. Runs offline from <code>index.html</code>; no server or build step.</p>
 <h3>Palettes</h3>
-<p>Burden: ColorBrewer YlOrRd · CI width: ColorBrewer Purples · Groups: Paul Tol “muted” · Group heatmap: ColorBrewer BrBG (brown = worse) · Correlations: ColorBrewer PuOr · Care gap: Stevens bivariate · Highlight: one blue (${HL}); selection: black outline.</p>
+<p>Burden: ColorBrewer YlOrRd · CI width: ColorBrewer Purples · Groups: Paul Tol "muted" · Group heatmap: ColorBrewer BrBG (brown = worse) · Correlations: ColorBrewer PuOr · Care gap: Stevens bivariate · Highlight: one blue (${HL}); selection: black outline.</p>
 <h3>Team</h3>
 <p>Graduate Team 6, CSCE 679 Data Visualization, Texas A&amp;M University: ${TEAM}. All four members share design, data processing, implementation and evaluation equally.</p>`);
-  d3.select("#foot").html("<b>Data:</b> CDC PLACES 2025 release (tract data, dataset cwsq-ngmh; BRFSS 2023/2022), U.S. Census Bureau 2020 cartographic boundaries, USDA ERS 2020 RUCA codes. Model-based crude prevalence estimates with 95% CIs, not case counts. Built with D3.js v7. Brazos HealthLens · CSCE 679 Data Visualization · Graduate Team 6: "+TEAM+".");
+  d3.select("#foot").html("<b>Data:</b> CDC PLACES 2025 release (tract data, dataset cwsq-ngmh; BRFSS 2023/2022), U.S. Census Bureau 2020 cartographic boundaries, USDA ERS 2020 RUCA codes. Model-based crude prevalence estimates with 95% CIs, not case counts. Built with D3.js v7. Brazos HealthLens · CSCE 679 Data Visualization · Graduate Team 6: " + TEAM + ".");
 }
-INITS.about = ()=>{};
+
+INITS.about = () => {};
