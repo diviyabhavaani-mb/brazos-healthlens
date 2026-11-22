@@ -124,13 +124,20 @@ def main():
 
         print("build_data.py")
         r = subprocess.run([sys.executable, str(PIPE / "build_data.py"), "--places", str(tmp / "places.csv"), "--ruca", str(tmp / "ruca.csv"),
-                            "--geo", str(tmp / "geo.csv"), "--out", str(tmp / "data.js"), "--retrieved", D["meta"]["retrieved"]],
+                            "--geo", str(tmp / "geo.csv"), "--out", str(tmp / "data.js"), "--retrieved", D["meta"]["retrieved"], "--provenance", str(tmp / "none.json")],
                            capture_output=True, text=True, cwd=PIPE)
         print(r.stdout.strip()); print(r.stderr[-2000:]) if r.returncode else None
         check(r.returncode == 0, "build_data.py runs")
         if r.returncode:
             sys.exit(1)
         B = load_js(tmp / "data.js")
+        print("check_data.py")
+        r = subprocess.run([sys.executable, str(PIPE / "check_data.py"), "--old", str(ROOT / "data" / "healthlens_data.js"),
+                            "--new", str(tmp / "data.js"), "--label", "offline rebuild from the shipped data (test_pipeline.py)",
+                            "--report", str(tmp / "report.md"), "--status", str(tmp / "status.js")], capture_output=True, text=True, cwd=PIPE)
+        print(r.stdout.strip())
+        check(r.returncode == 0, "check_data.py sanity checks pass on the rebuilt file")
+        check("Old vs new" in (tmp / "report.md").read_text(), "refresh report written")
 
     check(B["v"] == D["v"] and B["lo"] == D["lo"] and B["hi"] == D["hi"], "estimates and CIs identical")
     check(B["tracts"]["ru"] == D["tracts"]["ru"], "urban–rural classes identical")

@@ -3,7 +3,24 @@
 // relationship explorer (scatterplot with fit line and a ranking of the strongest correlates).
 "use strict";
 // ---------- parallel coordinates (R2: many measures at once) ----------
-let pcpAxes = ["DIABETES","BPHIGH","OBESITY","COPD","DEPRESSION","CSMOKING","LPA","ACCESS2","CHECKUP","BPMED"];
+// Measure presets (feedback: dense overlapping lines, "which indicators first?", quick-start for screening).
+const PCP_PRESETS = {
+  core:   {name:"Core (8 measures)", axes:["DIABETES","BPHIGH","OBESITY","COPD","DEPRESSION","ACCESS2","CHECKUP","BPMED"]},
+  bp:     {name:"Blood pressure & care", axes:["BPHIGH","BPMED","UNTREATED","ACCESS2","CHECKUP","OBESITY","DIABETES"]},
+  screen: {name:"Preventive screening", axes:["CHECKUP","CHOLSCREEN","COLON_SCREEN","MAMMOUSE","DENTAL","ACCESS2"]},
+  chronic:{name:"Chronic disease & risk factors", axes:["DIABETES","OBESITY","LPA","CSMOKING","BPHIGH","HIGHCHOL","CHD","STROKE"]},
+  mental: {name:"Mental & general health", axes:["DEPRESSION","MHLTH","GHLTH","PHLTH","SLEEP","LPA","BINGE"]},
+};
+let pcpPresetId = "core";
+let pcpAxes = PCP_PRESETS.core.axes.slice();
+function setPCPPreset(id, axes){
+  pcpPresetId = id; pcpAxes = (id==="custom"? axes : PCP_PRESETS[id].axes).slice(); pcpAuto=null;
+  [...pcpBrushes.keys()].forEach(a=>{ if(!pcpAxes.includes(a)) pcpBrushes.delete(a); });
+  d3.select("#pcpPreset").property("value", id);
+  d3.selectAll("#pcpPicker input").property("checked", function(){ return pcpAxes.includes(this.value); });
+  if(pcp){ ensureFocusAxis(); drawPCP(); }
+  HOOKS.forEach(f=>f("opts"));
+}
 const pcpBrushes = new Map();   // measure -> [v0,v1] in data units
 let pcp = null;
 function initPCP(){
@@ -13,6 +30,9 @@ function initPCP(){
   const svg=d3.select(wrap).style("height",H+"px").append("svg").attr("width",W).attr("height",H).style("position","absolute");
   pcp={W,H,c,c2,svg,m:{l:40,r:40,t:46,b:24},dpr};
   d3.select("#pcpColor").on("change", drawPCP);
+  const ps=d3.select("#pcpPreset"); Object.entries(PCP_PRESETS).forEach(([k,p])=>ps.append("option").attr("value",k).text(p.name)); ps.append("option").attr("value","custom").text("Custom (choose axes)");
+  ps.property("value", pcpPresetId).on("change", e=>{ const v=e.target.value; if(v==="custom"){ d3.select("#pcpPicker").style("display",null); pcpPresetId="custom"; } else setPCPPreset(v); });
+  d3.select("#pcpFocusOnly").on("change", drawPCP);
   d3.select("#pcpClear").on("click", ()=>{ pcpBrushes.clear(); applyPCPFilter(); drawPCP(); });
   d3.select("#pcpPickBtn").on("click", ()=>{ const p=d3.select("#pcpPicker"); p.style("display", p.style("display")==="none"?null:"none"); });
   const pk=d3.select("#pcpPicker");
@@ -20,7 +40,7 @@ function initPCP(){
   pk.append("div").attr("class","note").style("width","100%").text("Pick 3–14 measures (fewer axes = more readable).");
   d3.groups(MEAS, m=>m.group).forEach(([g,ms])=>{ pk.append("div").attr("class","g").text(g);
     ms.forEach(m=>{ const l=pk.append("label"); l.append("input").attr("type","checkbox").attr("value",m.id).property("checked",pcpAxes.includes(m.id))
-      .on("change",function(){ if(this.checked){ if(pcpAxes.length>=14){ this.checked=false; return;} pcpAxes.push(m.id);} else { if(pcpAxes.length<=3){ this.checked=true; return;} pcpAxes=pcpAxes.filter(a=>a!==m.id); pcpBrushes.delete(m.id); applyPCPFilter(); } drawPCP(); });
+      .on("change",function(){ pcpPresetId="custom"; d3.select("#pcpPreset").property("value","custom"); if(this.checked){ if(pcpAxes.length>=14){ this.checked=false; return;} pcpAxes.push(m.id);} else { if(pcpAxes.length<=3){ this.checked=true; return;} pcpAxes=pcpAxes.filter(a=>a!==m.id); pcpBrushes.delete(m.id); applyPCPFilter(); } drawPCP(); });
       l.append("span").text(m.short); }); });
   // hover: nearest line
   d3.select(c).on("mousemove", e=>pcpHover(e)).on("mouseleave",()=>setHover(null)).on("click", e=>{ const i=pcpNearest(e); if(i!=null) setSel(i); });
@@ -28,7 +48,8 @@ function initPCP(){
     if(ch.all||ch.measure) ensureFocusAxis();
     if(ch.hl && S.hlSrc!=="parallel coordinates" && pcpBrushes.size) pcpBrushes.clear();
     if(ch.scope && pcpBrushes.size && S.hlSrc==="parallel coordinates") setTimeout(()=>applyPCPFilter(true),0);   // brushes re-apply to the new scope's tracts
-    if(ch.all||ch.scope||ch.measure||ch.hl) drawPCP(); else if(ch.sel||ch.hover) drawPCPTop(); });
+    if(ch.all||ch.scope||ch.measure||ch.hl||ch.opts||ch.pins||(ch.sel && d3.select("#pcpFocusOnly").property("checked"))) drawPCP();
+    else if(ch.sel||ch.hover){ drawPCPTop(); if(ch.sel) drawPCPHowTo(); } });
 }
 let pcpAuto=null;   // axis that was added only because it is the focus measure
 function ensureFocusAxis(){
@@ -57,9 +78,10 @@ function drawPCPLines(){
   const {W,H,c,dpr}=pcp, x=pcp.x, y=pcp.y, ids=pcp.ids;
   const ctx=c.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
   const col=pcpColorFn(); const many=ids.length>1000; const hl=S.hl;
+  const fade = d3.select("#pcpFocusOnly").property("checked") && (S.sel!=null || hl);
   ctx.lineWidth = many? 0.6 : 1.2;
   const line=(i)=>{ ctx.beginPath(); pcpAxes.forEach((a,k)=>{ const v=V[a][i]; if(isNaN(v)) return; const px=x(a), py=y[a](v); k? ctx.lineTo(px,py): ctx.moveTo(px,py); }); ctx.stroke(); };
-  ctx.globalAlpha = hl? (many? .025 : .12) : (many? .07 : .55);
+  ctx.globalAlpha = fade? (many? .012 : .06) : hl? (many? .025 : .12) : (many? .07 : .55);
   ids.forEach(i=>{ if(hl && hl.has(i)) return; ctx.strokeStyle = hl? "#9aa4b0" : col(i); line(i); });
   if(hl){ ctx.globalAlpha = many? Math.max(.08, Math.min(.6, 60/hl.size)) : .85; ctx.lineWidth = many? .9: 1.6; ctx.strokeStyle=HL; ids.forEach(i=>{ if(hl.has(i)) line(i); }); }
   ctx.globalAlpha=1;
@@ -90,11 +112,18 @@ function drawPCPAxes(){
       const order=pcpAxes.slice().sort((p,q)=>(p===a?px:x(p))-(q===a?px:x(q))); if(order.join()!==pcpAxes.join()){ pcpAxes=order; }
     }).on("end",()=>{ pcp.dragging=null; drawPCP(); }))
     .on("dblclick",(e,a)=>{ if(pcpAxes.length>3){ pcpAxes=pcpAxes.filter(z=>z!==a); pcpBrushes.delete(a); d3.selectAll("#pcpPicker input").filter(function(){return this.value===a;}).property("checked",false); applyPCPFilter(); drawPCP(); } });
-  // legend
+  // brushed ranges are labelled under each brushed axis
+  ax.filter(a=>pcpBrushes.has(a)).append("text").attr("class","sub").attr("y",H-m.b+20).attr("text-anchor","middle").attr("fill",HL).style("font-weight",700)
+    .text(a=>{ const r=pcpBrushes.get(a); return "brushed "+fmt1(r[0])+"–"+fmt1(r[1]); });
+  // legend: line encodings are always explained (feedback: "a short legend for the colored lines")
   const mode=d3.select("#pcpColor").property("value");
-  const lg=svg.append("g").attr("transform","translate("+(m.l+90)+","+(H-6)+")");
-  if(mode==="cluster" && !hl){ let xx=0; CLS.forEach((c,k)=>{ lg.append("rect").attr("x",xx).attr("y",-9).attr("width",12).attr("height",9).attr("fill",CLCOL[k]); const t=lg.append("text").attr("x",xx+15).attr("y",-1).attr("font-size",10.5).text(c.name); xx+=t.node().getComputedTextLength()+30; }); }
-  if(mode==="ru" && !hl){ let xx=0; RU_NAMES.slice(0,4).forEach((n,k)=>{ lg.append("rect").attr("x",xx).attr("y",-9).attr("width",12).attr("height",9).attr("fill",RUCOL[k]).attr("stroke","#999"); const t=lg.append("text").attr("x",xx+15).attr("y",-1).attr("font-size",10.5).text(n); xx+=t.node().getComputedTextLength()+30; }); }
+  const key=d3.select("#pcpKey").empty()? d3.select("#pcpWrap").append("div").attr("id","pcpKey").attr("class","pcpkey") : d3.select("#pcpKey");
+  key.html('<span><svg width="26" height="10"><line x1="0" x2="26" y1="5" y2="5" stroke="#000" stroke-width="3"/></svg> selected tract (values labelled)</span>'+
+    '<span><svg width="26" height="10"><line x1="0" x2="26" y1="5" y2="5" stroke="'+HL+'" stroke-width="2"/></svg> highlighted group'+(hl? ' ('+fmtInt(pcp.ids.filter(i=>hl.has(i)).length)+')':'')+'</span>'+
+    (S.pins.length? '<span><svg width="26" height="10"><line x1="0" x2="26" y1="5" y2="5" stroke="#5b1a66" stroke-width="2"/></svg> pinned</span>':'')+
+    '<span><svg width="16" height="10"><line x1="2" x2="14" y1="5" y2="5" stroke="#c2410c" stroke-width="2.5"/></svg> Texas average</span>'+
+    (hl? '<span class="mu">other lines gray while a group is highlighted</span>' : mode==="cluster"? CLS.map((c,k)=>'<span><i style="background:'+CLCOL[k]+'"></i>'+c.name+'</span>').join("") : mode==="ru"? RU_NAMES.slice(0,4).map((n,k)=>'<span><i style="background:'+RUCOL[k]+'"></i>'+n+'</span>').join("") : mode==="measure"? '<span class="mu">line color = '+short(S.measure)+' quintile (darker = worse)</span>' : ''));
+  drawPCPHowTo();
 }
 function applyPCPFilter(final=true){
   if(!pcpBrushes.size){ if(S.hlSrc==="parallel coordinates"){ if(final) setTimeout(()=>setHL(null),0); else { S.hl=null; drawPCPLines(); } } return; }
@@ -106,8 +135,13 @@ function drawPCPTop(){
   if(!pcp||!pcp.x) return; const {W,H,c2,dpr}=pcp, x=pcp.x, y=pcp.y; const ctx=c2.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
   const line=(i,col,w)=>{ ctx.strokeStyle=col; ctx.lineWidth=w; ctx.beginPath(); pcpAxes.forEach((a,k)=>{ const v=V[a][i]; if(isNaN(v)) return; k? ctx.lineTo(x(a),y[a](v)): ctx.moveTo(x(a),y[a](v)); }); ctx.stroke(); };
   if(S.hover!=null && HAS[S.hover]){ line(S.hover,"#fff",4.5); line(S.hover,"#333",2); }
-  if(S.sel!=null && HAS[S.sel]){ line(S.sel,"#fff",5.5); line(S.sel,"#000",2.8);
-    ctx.font="600 11px Segoe UI, Arial"; ctx.fillStyle="#000"; const a=pcpAxes[pcpAxes.length-1]; ctx.textAlign="left"; ctx.fillText(tname(S.sel), x(a)+8, y[a](V[a][S.sel])+4); }
+  S.pins.forEach(i=>{ if(i!==S.sel && HAS[i]){ line(i,"#fff",4); line(i,"#5b1a66",1.8); } });
+  if(S.sel!=null && HAS[S.sel]){ line(S.sel,"#fff",6); line(S.sel,"#000",3);
+    // value labels on every axis so users can tell which line is theirs and read exact values (feedback)
+    ctx.font="600 11px Segoe UI, Arial"; ctx.textAlign="left";
+    pcpAxes.forEach(a=>{ const v=V[a][S.sel]; if(isNaN(v)) return; const px=x(a)+7, py=y[a](v); const t=fmt1(v)+(lowc(a,S.sel)?" ⚠":"");
+      const tw=ctx.measureText(t).width; ctx.fillStyle="rgba(255,255,255,.92)"; ctx.fillRect(px-2,py-8,tw+4,15); ctx.strokeStyle="#000"; ctx.lineWidth=.8; ctx.strokeRect(px-2,py-8,tw+4,15); ctx.fillStyle="#000"; ctx.fillText(t, px, py+4); });
+    const a=pcpAxes[pcpAxes.length-1]; ctx.font="700 11.5px Segoe UI, Arial"; ctx.fillText(tname(S.sel)+" · "+pname(S.sel), Math.min(x(a)+8, W-150), y[a](V[a][S.sel])+20); }
 }
 function pcpNearest(e){
   const [mx,my]=d3.pointer(e,pcp.c); const x=pcp.x, y=pcp.y; const dom=pcpAxes; let k=0; while(k<dom.length-2 && x(dom[k+1])<mx) k++;
@@ -117,7 +151,7 @@ function pcpNearest(e){
   return best;
 }
 function pcpHover(e){ const i=pcpNearest(e); if(i==null){ if(S.hover!=null) setHover(null); return; }
-  setHover(i,e); showTip(tipTract(i, pcpAxes.slice(0,6).map(a=>'<div>'+short(a)+': <b>'+pct(V[a][i])+'</b> <span class="mu">(TX '+fmt1(REF.tx[a])+')</span></div>').join("")+'<div class="mu">Click to select</div>'), e); }
+  setHover(i,e); showTip(tipTract(i, pcpAxes.map(a=>'<div>'+short(a)+': <b>'+pct(V[a][i])+'</b>'+(HI[a]?' <span class="mu">('+fmt1(LO[a][i])+'–'+fmt1(HI[a][i])+')</span>':'')+(lowc(a,i)?' ⚠':'')+' <span class="mu">· TX '+fmt1(REF.tx[a])+'</span></div>').join("")+'<div class="mu">Click to select this tract in every view</div>'), e); }
 
 // ---------- relationship explorer (R2: relate risk factors to outcomes) ----------
 const RISKX = ["CSMOKING","LPA","OBESITY","BINGE","SLEEP","ACCESS2","CHECKUP","BPMED","CHOLSCREEN","DENTAL","GHLTH","MHLTH","DISABILITY"];
@@ -131,7 +165,7 @@ function initRisk(){
   registerView("compare", ch=>{
     if(ch.measure||ch.all){ const ys=d3.select("#riskY"); if(ys.selectAll("option").filter(function(){return this.value===S.measure;}).size()){ ys.property("value",S.measure);
         if(d3.select("#riskX").property("value")===S.measure) d3.select("#riskX").property("value", S.measure==="LPA"?"CSMOKING":"LPA"); } }
-    if(ch.all||ch.scope||ch.measure) drawRisk(); else if(ch.hl){ MAPS.risk.render(); if(RSTAT.risk) RSTAT.risk.hl=RSTAT.sc["risk explorer"].hl; } else if(ch.sel||ch.hover) MAPS.risk.drawTop(); });
+    if(ch.all||ch.scope||ch.measure||ch.opts) drawRisk(); else if(ch.hl){ MAPS.risk.render(); if(RSTAT.risk) RSTAT.risk.hl=RSTAT.sc["risk explorer"].hl; } else if(ch.sel||ch.hover) MAPS.risk.drawTop(); });
 }
 function drawRisk(){
   const a=d3.select("#riskX").property("value"), b=d3.select("#riskY").property("value"), cm=d3.select("#riskC").property("value");
@@ -165,3 +199,14 @@ function drawRisk(){
 
 function initCompareTab(){ initPCP(); initRisk(); }
 INITS.compare = initCompareTab;
+
+// "How to read this chart", with the selected tract as the worked example (feedback: explain axes, avoid misreading crossing lines)
+function drawPCPHowTo(){
+  const i=S.sel!=null && HAS[S.sel]? S.sel : null; const a=pcpAxes[0], b=pcpAxes[1];
+  let h='<p><b>Each line is one census tract.</b> It crosses every vertical axis at that tract\'s value for the measure named on top. Every axis points <b>up = worse</b> (care measures such as checkups are flipped), so a line that stays high is a tract that does poorly on many measures.</p>';
+  h+='<p><b>Read across, not along.</b> Many lines going the same way between two neighboring axes means the measures rise together; lines crossing in an X means they move in opposite directions. Crossing lines are normal and do not mean an error.</p>';
+  if(i!=null) h+='<p><b>Your tract:</b> the thick black line is '+tfull(i)+'. Its value is printed next to every axis, e.g. '+short(a)+' '+pct(V[a][i])+' (Texas '+fmt1(REF.tx[a])+') and '+short(b)+' '+pct(V[b][i])+'.</p>';
+  else h+='<p><b>Tip:</b> select a tract (search or click a line) and it is drawn thick black with its values on every axis.</p>';
+  h+='<p><b>Filter:</b> drag up or down on an axis to keep only tracts in that range; the matching tracts turn blue here and in every other view. Use <b>Measures</b> to switch to a shorter set, or tick <b>Fade other lines</b> to see only your tract and group.</p>';
+  d3.select("#pcpHowBody").html(h);
+}

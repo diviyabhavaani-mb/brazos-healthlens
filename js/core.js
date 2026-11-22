@@ -36,6 +36,13 @@ const UNC = d3.schemePurples[5];                      // CI width: darker = wide
 const HL = "#0b63ce";                                 // the single highlight color
 const CLCOL = ["#88CCEE","#44AA99","#DDCC77","#CC6677","#882255"];
 const CLTXT = ["#111","#111","#111","#111","#fff"];   // Paul Tol muted, ordered light->dark by burden
+const PAL = {   // "High contrast" option (feedback: some group colors looked alike): Okabe–Ito based, still light->dark by burden
+  normal:{cl:CLCOL.slice(), tx:CLTXT.slice()},
+  hc:{cl:["#56B4E9","#009E73","#F0E442","#D55E00","#5B1A66"], tx:["#111","#fff","#111","#fff","#fff"]} };
+function setPalette(hc){ const p=hc? PAL.hc : PAL.normal; p.cl.forEach((c,k)=>{ CLCOL[k]=c; CLTXT[k]=p.tx[k]; });
+  document.body.classList.toggle("hc", !!hc); S.hc=!!hc; refreshAllViews(); HOOKS.forEach(f=>f("opts")); }
+// redraw every view (used when a palette changes): forget what each view last drew
+function refreshAllViews(){ VIEWS.forEach(v=>{ v.seen={}; }); VIEWS.forEach(v=>{ if(v.tab===S.tab||v.tab==="*") syncView(v); }); }
 const RUCOL = ["#1f2933","#6b7785","#a3adb8","#d6dbe1","#eeeeee"];
 // bivariate 3x3 (Stevens purple–gold): index [burden][deficit]; darkest = high/high
 const BIV = [["#e8e8e8","#cbb8d7","#9972af"],["#e4d9ac","#c8ada0","#976b82"],["#c8b35a","#af8e53","#804d36"]];
@@ -55,9 +62,9 @@ function rqBadge(r){ return '<span class="rqb" style="background:'+REQ[r].col+'"
 // One store for everything shared between views. Every mutation goes through a setter that bumps a
 // version counter; each registered view remembers the versions it last rendered, so a view on a hidden
 // tab catches up with exactly what changed (scope, measure, selection, highlight, options) when shown.
-const S = {scope:"bv", measure:"DIABETES", sel:null, hl:null, hlSrc:"", hover:null, tab:"map", filter:null,
-           mapMode:"measure", layer:"auto", lowconf:false};
-const STORE_V = {scope:1, measure:1, sel:1, hl:1, hover:1, opts:1};
+const S = {scope:"bv", measure:"DIABETES", sel:null, hl:null, hlSrc:"", hover:null, tab:"overview", filter:null,
+           mapMode:"measure", layer:"auto", lowconf:false, pins:[]};
+const STORE_V = {scope:1, measure:1, sel:1, hl:1, hover:1, opts:1, pins:1};
 const VIEWS = [];   // {tab, update(ch), seen}
 const RSTAT = {};   // render statistics written by each view, read by tests/smoke_test.py
 function registerView(tab, update, name){ const v={tab, update, seen:{}, name:name||tab, rendered:false}; VIEWS.push(v); if(tab===S.tab||tab==="*") syncView(v); return v; }
@@ -73,7 +80,9 @@ function changed(k){
   STORE_V[k]++;
   VIEWS.forEach(v=>{ if(v.tab===S.tab||v.tab==="*") syncView(v); });
   if(k!=="hover"){ updateChips(); updateLinkCaps(); }
+  HOOKS.forEach(f=>{ try{ f(k); }catch(e){ console.error(e); } });
 }
+const HOOKS = [];   // functions called after every store change (shareable URL, pinned list, live region...)
 function scopeIds(){ return S.scope==="bv"? ID_BV : ID_TX; }
 function scopeName(){ return S.scope==="bv"? "Brazos Valley" : "Texas"; }
 function scopeKey(){ return S.scope==="bv"? "bv" : "tx"; }
@@ -176,9 +185,10 @@ function tipTract(i, extra){
 function hlInScope(){ if(!S.hl) return 0; let n=0; S.hl.forEach(i=>{ if(inScope(i)) n++; }); return n; }
 function updateChips(){
   d3.select("#selchip").style("display", S.sel!=null? "inline-flex":"none"); if(S.sel!=null) d3.select("#selname").text(tfull(S.sel));
+  d3.select("#carryHint").style("display", (S.sel!=null||S.hl)? null : "none");
   d3.select("#hlchip").style("display", S.hl? "inline-flex":"none");
   if(S.hl) d3.select("#hlname").text(S.hl.size+" tract"+(S.hl.size===1?"":"s")); d3.select("#hlsrc").text(S.hl? S.hlSrc : "");
-  d3.select("#scopeTag").text(S.scope==="bv"? "Comparing within the Brazos Valley ("+ID_BV.length+" tracts)" : "Comparing across all of Texas ("+fmtInt(ID_TX.length)+" tracts)");
+  d3.select("#scopeTag").text(S.scope==="bv"? "Brazos Valley · "+ID_BV.length+" tracts" : "All Texas · "+fmtInt(ID_TX.length)+" tracts").attr("title","Statistics, colors and rankings compare within this area");
   d3.select("#ruSel").property("value", S.filter && S.filter.type==="ru"? String(S.filter.key) : "");
 }
 // every main card carries a small "linked" caption stating what it currently shows from the shared state
@@ -232,6 +242,7 @@ function drawSres(){ sres.style("display", sItems.length?"block":"none").selectA
   .html(d=>d.label+"<span>"+d.sub+"</span>").on("mousedown",(e,d)=>runSearch(d)); }
 function runSearch(it){
   sres.style("display","none"); d3.select("#search").property("value", it.label);
+  if(["overview","survey","about"].includes(S.tab)) showTab("map");   // a search result is always shown on a map
   let ids;
   if(it.type==="county"){ setFilter("county", it.key); if(window.MAPS && MAPS.main && S.tab==="map") MAPS.main.zoomToIds(filterIds(S.filter||{type:"county",key:it.key}), 0.12); return; }
   else if(it.type==="place") ids = ID_TX.filter(i=>TR.place[i] && TR.place[i].split(", ").includes(it.key) && cname(i)===it.county);
@@ -278,8 +289,8 @@ function drawKPIs(){
 
 // ======================= TABS =======================
 // Each tab names the requirement(s) it serves.
-const TABS = [["map","Map & profile","R1 R2 R4"],["compare","Compare measures","R2"],["similar","Similar & unusual","R3"],
-              ["gap","Care gaps","R5"],["survey","Survey & requirements",""],["about","Methods & data",""]];
+const TABS = [["overview","Start here",""],["map","Map & profile","R1 R2 R4"],["compare","Compare measures","R2"],["similar","Similar & unusual","R3"],
+              ["gap","Care gaps","R5"],["survey","Survey & evaluation",""],["about","Methods & data",""]];
 d3.select("#tabs").selectAll("button").data(TABS).join("button").attr("role","tab").attr("data-t",d=>d[0])
   .html(d=>d[1]+(d[2]? '<span class="rq">'+d[2].split(" ").join(" · ")+'</span>':'')).on("click",(e,d)=>showTab(d[0]));
 const INITS = {}, INITED = {};

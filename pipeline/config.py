@@ -5,6 +5,7 @@ RAW = ROOT / "pipeline" / "raw"        # downloads (git-ignored)
 WORK = ROOT / "pipeline" / "work"      # intermediate files (git-ignored)
 DATA = ROOT / "data"                   # files the dashboard loads
 # ---- sources ----
+PLACES_RELEASE = 2025         # release year of PLACES_DATASET (download.py --latest may pick a newer one)
 PLACES_DATASET = "cwsq-ngmh"   # CDC PLACES, Census Tract Data, 2025 release (Socrata id on data.cdc.gov)
 PLACES_URL = f"https://data.cdc.gov/resource/{PLACES_DATASET}.csv"
 PLACES_CSV = RAW / "places_tx_tract_2025.csv"

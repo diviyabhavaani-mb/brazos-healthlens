@@ -5,7 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Brazos HealthLens</title>
 <meta name="description" content="Linked, uncertainty-aware views of tract-level chronic disease in the Brazos Valley and Texas (CDC PLACES 2025). CSCE 679 Data Visualization, Graduate Team 6.">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=4.0">
+<script>
+// Load check: if a file is missing or a script fails, say so on the page instead of leaving empty charts.
+window.HL_ERRORS = [];
+function hlShowError(msg){
+  window.HL_ERRORS.push(msg);
+  var b=document.getElementById("hlErr");
+  if(!b){ b=document.createElement("div"); b.id="hlErr"; b.setAttribute("role","alert");
+    b.style.cssText="position:fixed;left:12px;right:12px;top:12px;z-index:9999;background:#fdecea;color:#7a1c14;border:1px solid #e3a59c;border-radius:6px;padding:10px 14px;font:13px/1.45 system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.15)";
+    (document.body||document.documentElement).appendChild(b); }
+  b.innerHTML="<b>Brazos HealthLens could not start.</b> "+window.HL_ERRORS.join("<br>")+"<br><span style='color:#555'>Try a hard refresh (Ctrl+Shift+R / Cmd+Shift+R). If this stays, the file named above is missing from the repository or did not upload completely.</span>";
+}
+window.addEventListener("error", function(e){
+  var t=e.target;
+  if(t && (t.tagName==="SCRIPT"||t.tagName==="LINK")) hlShowError("Could not load <code>"+(t.src||t.href)+"</code>");
+  else hlShowError("Script error: "+e.message+(e.filename? " ("+e.filename.split("/").slice(-2).join("/")+":"+e.lineno+")":""));
+}, true);
+</script>
 </head>
 <body>
 <header>
@@ -13,10 +30,12 @@
   <h1>Brazos HealthLens <span>· Where are chronic disease, risk and care gaps heaviest?</span></h1>
   <p class="sub">Linked views of CDC PLACES model estimates for all 6,844 Texas census tracts, focused on the 7-county Brazos Valley. Select a tract or brush a group in any view and it lights up in every view. Darker colors always mean worse.</p>
   <p class="team">CSCE 679 Data Visualization · <b>Graduate Team 6</b> · Diviya Bhavaani M B · Manogna Rayala · Seo Hyeon Beom · Alexis Santiago</p>
+  <p class="prov" id="prov"></p>
  </div>
  <div class="hdr-right">
   <span><label class="lb">Compare within</label><span class="seg" id="scopeSeg" role="group" aria-label="Comparison scope"><button data-s="bv" class="on" title="Statistics, rankings and point clouds use the 102 Brazos Valley tracts">Brazos Valley</button><button data-s="tx" title="Statistics, rankings and point clouds use all 6,844 Texas tracts">All Texas</button></span></span>
-  <button class="btn primary" id="storyBtn" title="A guided walk through seven findings, one or two per requirement">▶ Guided story</button>
+  <label class="hcwrap" title="Stronger colors for profile groups and lines, larger legend text"><input type="checkbox" id="hcToggle"> High contrast</label>
+  <button class="btn primary" id="storyBtn" title="One question followed through every view, about 3 minutes">▶ Guided story</button>
  </div>
 </header>
 <div id="kpiCap"></div>
@@ -25,16 +44,44 @@
  <nav id="tabs" role="tablist" aria-label="Views"></nav>
  <div id="ctrl">
   <span><label class="lb" for="measureSel">Focus measure</label><select id="measureSel"></select></span>
-  <span id="searchwrap"><input id="search" type="search" placeholder="Find a town, county or tract (e.g. Hearne)" autocomplete="off" aria-label="Search for a town, county or tract"><div id="searchres" role="listbox"></div></span>
+  <span id="searchwrap"><label class="lb" for="search">Find</label><input id="search" type="search" placeholder="County, town or tract (e.g. Brazos, Hearne) · press /" autocomplete="off" aria-label="Find a county, town or tract"><div id="searchres" role="listbox"></div></span>
   <span title="R4: highlight one urban–rural class (USDA RUCA) in every view"><label class="lb" for="ruSel">Urban–rural</label><select id="ruSel"><option value="">All classes</option></select></span>
   <span id="hlchip" title="The highlighted group (brush, legend cell, cluster, county…): shown in blue in every view"><span>Selection: <b id="hlname"></b> <span id="hlsrc"></span></span><button class="chipclear" id="hlx" title="Clear the selection everywhere">· clear</button></span>
   <span id="selchip" title="The selected tract: outlined in black in every view"><span>Tract: <b id="selname"></b></span><button class="chipclear" id="selprof" title="Open this tract's profile">profile</button><button class="chipx" id="selx" title="Clear selected tract" aria-label="Clear selected tract">×</button></span>
+  <span id="carryHint" class="carry" title="The selected tract and the highlighted group stay the same when you switch tabs">↔ stays selected on every tab</span>
   <span class="spacer"></span>
   <span id="scopeTag"></span>
+  <span class="menuwrap"><button class="btn" id="exportBtn" aria-haspopup="true" aria-expanded="false" title="Download data, a printable summary or an image">⤓ Export ▾</button>
+   <div class="menu" id="exportMenu" role="menu">
+    <button role="menuitem" data-x="csv">Data for the selection (CSV)</button>
+    <button role="menuitem" data-x="print">Printable summary report</button>
+    <button role="menuitem" data-x="png">Image of the main chart on this tab (PNG)</button>
+    <button role="menuitem" data-x="link">Copy a link to this exact view</button>
+   </div></span>
+  <button class="btn" id="linkBtn" title="Copy a link that reopens this tab, scope, measure, selection and highlight">🔗 Share link</button>
   <button class="btn" id="resetBtn" title="Clear selection, highlight and story annotations">Reset</button>
  </div>
 </div>
 <main>
+<!-- 0 · START HERE: one question, how the views link, quick starts, data provenance -->
+<section class="tab" id="tab-overview" role="tabpanel">
+ <div class="grid" style="grid-template-columns:minmax(0,1fr) 360px">
+  <div class="card">
+   <h2>Start here: one question, five linked views</h2>
+   <p class="note" id="ovIntro"></p>
+   <svg id="ovFlow" class="svgfull" role="img" aria-label="How the views link: a question flows from the map to the profile, the comparison, the peers and the care gaps, with the same selected tract and highlighted group in every view"></svg>
+   <div class="ovstart">
+    <button class="btn primary big" id="ovStory">▶ Take the guided story (about 3 minutes)</button>
+    <span class="note" style="margin:0">It follows <b id="ovTract">one tract</b> through every view to answer one question, then gives you a summary you can download.</span>
+   </div>
+  </div>
+  <div class="grid" style="grid-template-rows:auto auto auto;align-content:start">
+   <div class="card"><h3>Quick start: pick a question</h3><p class="note">Each preset sets the focus measure, the comparison axes and opens the view that answers it.</p><div id="ovPresets" class="presets"></div></div>
+   <div class="card"><h3>How to read every view</h3><div id="ovGrammar" class="grammar"></div></div>
+   <div class="card"><h3>About the data</h3><div id="ovData" class="kv2"></div></div>
+  </div>
+ </div>
+</section>
 <!-- 1 · MAP & PROFILE  (R1 explore where · R2 tract profile · R4 reliability) -->
 <section class="tab" id="tab-map" role="tabpanel">
  <div class="grid" style="grid-template-columns:minmax(0,1fr) 470px">
@@ -45,7 +92,8 @@
     <span><label class="lb" for="layerSel">Layer</label><select id="layerSel" title="Counties are shown automatically when zoomed out to the state"><option value="auto">Auto (counties when zoomed out)</option><option value="tract">Tracts</option><option value="county">Counties</option></select></span>
     <label title="R4: hatch tracts whose 95% CI is among the widest 10% in Texas"><input type="checkbox" id="lowconf"> Hatch low-confidence</label>
    </div>
-   <div class="mapwrap" id="mainMap" aria-label="Map of Texas census tracts"></div>
+   <div class="mapwrap" id="mainMap"></div>
+   <details class="txtsum" id="mapSummary"><summary>Text summary of this map (for screen readers and keyboard users)</summary><div></div></details>
   </div>
   <div class="card scroll" id="profile" style="max-height:790px"></div>
  </div>
@@ -53,6 +101,7 @@
   <div class="card"><h2 id="rankTitle"></h2><p class="note" id="rankNote"></p><svg id="rank" class="svgfull" role="img" aria-label="Ranked tracts with confidence intervals"></svg></div>
   <div class="card"><h2>How the selection compares: county averages</h2><p class="note">Adult-population-weighted averages for the focus measure. Brazos Valley counties in bold; Texas and Valley reference bars. Click a bar to highlight that county's tracts.</p><svg id="ctybars" class="svgfull" role="img" aria-label="County averages"></svg></div>
  </div>
+ <div class="card" id="pinCard" style="margin-top:12px"><h2>Pinned tracts, side by side</h2><p class="note" id="pinNote"></p><div class="scroll"><table class="list pintable" id="pinTable"></table></div></div>
 </section>
 <!-- 2 · COMPARE MEASURES  (R2 many measures at once, relationships) -->
 <section class="tab" id="tab-compare" role="tabpanel">
@@ -61,10 +110,13 @@
   <p class="note">One line per tract. Every axis is oriented so <b>up = worse</b> (care measures are flipped). Drag on an axis to brush a range (several brushes combine with AND); drag an axis title to reorder; double-click an axis title to remove it.</p>
   <div class="opts">
    <span><label class="lb" for="pcpColor">Color lines by</label><select id="pcpColor"><option value="cluster">Health profile group</option><option value="ru">Urban–rural class</option><option value="measure">Focus measure (quintile)</option><option value="none">Plain gray</option></select></span>
+   <span><label class="lb" for="pcpPreset">Measures</label><select id="pcpPreset"></select></span>
+   <label title="Fade every line except the selected tract and the highlighted group"><input type="checkbox" id="pcpFocusOnly"> Fade other lines</label>
    <button class="btn" id="pcpClear">Clear brushes</button>
    <button class="btn" id="pcpPickBtn" aria-expanded="false">Choose axes ▾</button>
    <span class="note" id="pcpCount" style="margin:0"></span>
   </div>
+  <details class="howto" id="pcpHow"><summary>How to read this chart</summary><div id="pcpHowBody"></div></details>
   <div id="pcpPicker" class="picker card" style="display:none;margin-bottom:8px"></div>
   <div id="pcpWrap" style="position:relative"></div>
   <div class="caveat">Overplotting: lines are semi-transparent; brushed lines are drawn on top in blue. In "All Texas" mode 6,844 lines are drawn; brush to filter.</div>
@@ -86,6 +138,7 @@
    <p class="note" id="peerDesc"></p>
    <div class="opts"><span><label class="lb" for="peerK">Number of peers</label><input type="range" id="peerK" min="5" max="20" value="10" style="width:110px"> <b id="peerKv">10</b></span>
    <label id="peerOutWrap"><input type="checkbox" id="peerOut"> Outside the Brazos Valley only</label></div>
+   <details class="howto"><summary>What does "similar" mean here?</summary><div id="peerHow"></div></details>
    <div id="peerHead"></div>
    <div class="scroll" style="max-height:470px"><table class="list" id="peerList"></table></div>
   </div>
@@ -112,6 +165,9 @@
 </section>
 <!-- 5 · SURVEY & REQUIREMENTS -->
 <section class="tab" id="tab-survey" role="tabpanel">
+ <div class="card" style="margin-bottom:12px"><h2>Evaluation: what prototype users told us, and what we changed</h2><p class="note" id="fbIntro"></p>
+  <div class="grid fbgrid"><svg id="fbTasks" class="svgfull" role="img" aria-label="Task success and ratings from the prototype feedback survey"></svg><svg id="fbThemes" class="svgfull" role="img" aria-label="Themes from open-ended feedback"></svg></div>
+  <table class="list fbtable" id="fbChanges" style="margin-top:8px"></table></div>
  <div class="grid" style="grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)">
   <div class="card"><h2>Why these five requirements: evidence from the initial user survey</h2><p class="note" id="svIntro"></p><svg id="svMatrix" class="svgfull" role="img" aria-label="Requirement by survey question evidence matrix"></svg></div>
   <div class="card"><h2>Who answered</h2><p class="note" id="svWhoNote"></p><svg id="svWho" class="svgfull" role="img" aria-label="Respondent roles and frequency of use"></svg>
@@ -127,6 +183,7 @@
 </main>
 <footer id="foot"></footer>
 <div id="tooltip" role="status"></div>
+<div id="live" class="sr" aria-live="polite"></div>
 <aside id="drawer" aria-label="Tract profile"><div class="dh"><span>Tract profile (linked to every tab)</span><button class="chipx" id="drawerX" title="Close profile" aria-label="Close profile">×</button></div><div id="drawerBody"></div></aside>
 <div id="story" role="dialog" aria-label="Guided story"><div class="sh"><span>Guided story</span><button class="chipx" id="storyX" style="background:#fff" title="Close story" aria-label="Close story">×</button></div>
  <div class="sb"><h3 id="stTitle"></h3><div id="stBody"></div></div>
@@ -134,22 +191,33 @@
 <noscript><p style="padding:20px">Brazos HealthLens needs JavaScript.</p></noscript>
 
 <!-- libraries (vendored, no CDN needed) -->
-<script src="vendor/d3.v7.9.0.min.js"></script>
-<script src="vendor/topojson-client.v3.1.0.min.js"></script>
+<script src="vendor/d3.v7.9.0.min.js?v=4.0"></script>
+<script src="vendor/topojson-client.v3.1.0.min.js?v=4.0"></script>
 <!-- data (generated by pipeline/) -->
-<script src="data/healthlens_data.js"></script>
-<script src="data/tracts_topo.js"></script>
-<script src="data/survey_summary.js"></script>
+<script src="data/healthlens_data.js?v=4.0"></script>
+<script src="data/tracts_topo.js?v=4.0"></script>
+<script src="data/survey_summary.js?v=4.0"></script>
+<script src="data/feedback_summary.js?v=4.0"></script>
+<script src="data/refresh_status.js?v=4.0" onerror="void 0"></script>
 <!-- application: classic scripts that share one global scope, loaded in order -->
-<script src="js/core.js"></script>
-<script src="js/views.js"></script>
-<script src="js/tab_map.js"></script>
-<script src="js/tab_compare.js"></script>
-<script src="js/tab_similar.js"></script>
-<script src="js/tab_gaps.js"></script>
-<script src="js/tab_survey.js"></script>
-<script src="js/tab_methods.js"></script>
-<script src="js/story.js"></script>
-<script src="js/main.js"></script>
+<script>
+if(!window.d3) hlShowError("D3.js did not load (vendor/d3.v7.9.0.min.js).");
+if(!window.HL_DATA) hlShowError("Tract data did not load (data/healthlens_data.js).");
+if(!window.HL_TOPO) hlShowError("Map boundaries did not load (data/tracts_topo.js).");
+if(!window.HL_SURVEY) hlShowError("Survey summary did not load (data/survey_summary.js).");
+if(!window.HL_FEEDBACK) hlShowError("Feedback summary did not load (data/feedback_summary.js).");
+</script>
+<script src="js/core.js?v=4.0"></script>
+<script src="js/views.js?v=4.0"></script>
+<script src="js/tab_map.js?v=4.0"></script>
+<script src="js/tab_compare.js?v=4.0"></script>
+<script src="js/tab_similar.js?v=4.0"></script>
+<script src="js/tab_gaps.js?v=4.0"></script>
+<script src="js/tab_survey.js?v=4.0"></script>
+<script src="js/tab_methods.js?v=4.0"></script>
+<script src="js/overview.js?v=4.0"></script>
+<script src="js/share.js?v=4.0"></script>
+<script src="js/story.js?v=4.0"></script>
+<script src="js/main.js?v=4.0"></script>
 </body>
 </html>

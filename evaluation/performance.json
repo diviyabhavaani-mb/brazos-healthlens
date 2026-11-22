@@ -1,0 +1,68 @@
+{
+ "runs": 5,
+ "machine": "Linux x86_64, headless Chromium",
+ "load_ms": [
+  729.901517999906,
+  771.2257359999057,
+  690.7960689998163,
+  715.9929709998778,
+  767.4127899999803
+ ],
+ "tasks": [
+  {
+   "task": "Select a tract (all linked views update)",
+   "median": 278.3,
+   "max": 374.4
+  },
+  {
+   "task": "Change focus measure (maps, PCP, profile)",
+   "median": 38.9,
+   "max": 52.7
+  },
+  {
+   "task": "Highlight a group (urban-rural filter)",
+   "median": 36.8,
+   "max": 53.1
+  },
+  {
+   "task": "Switch to Compare tab (102 PCP lines)",
+   "median": 56.4,
+   "max": 79.5
+  },
+  {
+   "task": "Scope to all Texas (6,844 PCP lines)",
+   "median": 178.3,
+   "max": 284.7
+  },
+  {
+   "task": "Open Similar tab (20 peers + map)",
+   "median": 106,
+   "max": 137.1
+  },
+  {
+   "task": "Open Care-gap tab",
+   "median": 58.3,
+   "max": 70.7
+  },
+  {
+   "task": "Apply blood-pressure preset",
+   "median": 18.2,
+   "max": 29.5
+  },
+  {
+   "task": "Build a share link",
+   "median": 9.7,
+   "max": 15.8
+  },
+  {
+   "task": "High-contrast palette (redraw all)",
+   "median": 44.6,
+   "max": 50.9
+  }
+ ],
+ "browser": "157.0.8103.78",
+ "load": {
+  "median": 729.9,
+  "max": 771.2
+ }
+}

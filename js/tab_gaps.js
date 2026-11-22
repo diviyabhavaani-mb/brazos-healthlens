@@ -13,9 +13,10 @@ function initGap(){
     tip:i=>{ const [b,d]=gapClass(i); return tipTract(i, '<div style="margin-top:3px">Burden index <b>'+fmtS(BURDEN[i])+'</b> SD ('+["low","middle","high"][b]+' third) · Care deficit <b>'+fmtS(DEFICIT[i])+'</b> SD ('+["low","middle","high"][d]+' third)</div>'+
       ["DIABETES","BPHIGH","ACCESS2","CHECKUP","BPMED","UNTREATED"].map(m=>'<div>'+short(m)+': <b>'+pct(V[m][i])+'</b> <span class="mu">(TX '+fmt1(REF.tx[m])+')</span></div>').join("")); }});
   MAPS.gap.sc = new ScatterView(document.getElementById("gapScatter"), {height:560, name:"care-gap scatter", m:{l:52,r:16,t:14,b:44}});
+  enableMapKeyboard(MAPS.gap, ()=>{ gapT=gapCuts(); return scopeIds().filter(i=>!isNaN(BURDEN[i])).sort((a,b)=>(BURDEN[b]+DEFICIT[b])-(BURDEN[a]+DEFICIT[a])); }, ()=>"Care-gap map of "+scopeName()+": disease burden by care deficit, darkest is both high");
   registerView("gap", ch=>{
     if(ch.scope && !ch.all) MAPS.gap.frameScope();
-    if(ch.all||ch.scope||ch.hl||ch.sel||ch.measure) drawGap();
+    if(ch.all||ch.scope||ch.hl||ch.sel||ch.measure||ch.opts) drawGap();
     else if(ch.hover){ MAPS.gap.drawTop(); MAPS.gap.sc.drawTop(); hoverGapList(); } });
 }
 function drawGap(){
@@ -35,7 +36,7 @@ function drawGap(){
   s.append("text").attr("x",ox+1.5*cs).attr("y",oy+3*cs+14).attr("text-anchor","middle").attr("font-size",10.5).text("Care deficit →");
   s.append("text").attr("transform","translate("+(ox-8)+","+(oy+1.5*cs)+") rotate(-90)").attr("text-anchor","middle").attr("font-size",10.5).text("Disease burden →");
   s.append("text").attr("x",ox+3*cs+4).attr("y",oy+12).attr("font-size",10).attr("font-weight",650).text("care gap");
-  L.append("div").attr("class","mu").text("Numbers = tracts per cell. Click a cell to highlight.");
+  L.append("div").attr("class","mu").text("Numbers = tracts per cell. Up = more disease, right = weaker preventive care; top-right (darkest) = care gap. Click a cell to highlight.");
   // scatter
   MAPS.gap.sc.set({ids, bgIds:S.scope==="bv"?ID_TX:null, x:i=>DEFICIT[i], y:i=>BURDEN[i], color:i=>{ const [b,d]=gapClass(i); return BIV[b][d]; }, alpha:S.scope==="bv"?.95:.7,
     xLabel:"Care deficit index (SD, → worse access/prevention)", yLabel:"Disease burden index (SD, ↑ worse)", tip:i=>MAPS.gap.o.tip(i),

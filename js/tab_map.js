@@ -33,6 +33,8 @@ function initMapTab(){
     if(ch.scope && MAPS.main.framed!==S.scope) MAPS.main.frameScope();
     if(ch.all||ch.scope||ch.measure||ch.hl||ch.sel||ch.opts) renderMapTab();
     else if(ch.hover){ MAPS.main.drawTop(); hoverRank(); } });
+  registerView("map", ch=>{ if(ch.all||ch.pins||ch.measure||ch.scope||ch.sel||ch.opts) drawPins(); }, "pins");
+  enableMapKeyboard(MAPS.main, orderWorstFirst(), ()=>"Map of "+MID[S.measure].label+", "+fmtInt(scopeIds().length)+" "+scopeName()+" tracts, darker is worse");
 }
 function setMapMode(k){
   S.mapMode=k; d3.selectAll("#mapMode button").classed("on",function(){return this.dataset.m===S.mapMode;});
@@ -74,7 +76,7 @@ function renderMapTab(){
       r.append("span").attr("class","sw").style("background",CLCOL[k]); r.append("span").text((k+1)+". "+c.name+" ("+fmtInt(n)+")"); });
   }
   RSTAT.mapMode=S.mapMode;
-  drawProfile(); drawRank(); drawCtyBars();
+  drawProfile(); drawRank(); drawCtyBars(); mapTextSummary();
 }
 
 // ---------- profile panel (R2: full profile vs. county, valley and Texas; R4: CIs) ----------
@@ -117,8 +119,11 @@ function drawProfile(target){
   if(!HAS[i]){ P.append("p").attr("class","note").text("No PLACES estimate for this tract."); return; }
   P.append("p").attr("class","note").html("Population "+fmtInt(POP[i])+" ("+fmtInt(ADULTS[i])+" adults) · "+RU_NAMES[TR.ru[i]]+"<br>Profile group: "+clPill(CL[i],true)+
     " · <a href='#' class='toPeers'>Find similar tracts →</a>"+(inDrawer? " · <a href='#' class='toMap'>Open on map →</a>":""));
+  P.select("h2").append("button").attr("class","pinbtn"+(S.pins.includes(i)?" on":"")).attr("title","Pin to compare up to four tracts side by side").text(S.pins.includes(i)? "📌 pinned" : "📌 pin").on("click",()=>togglePin(i));
   P.selectAll(".toPeers").on("click", e=>{ e.preventDefault(); showTab("similar"); });
   P.selectAll(".toMap").on("click", e=>{ e.preventDefault(); showTab("map"); MAPS.main.zoomToIds([S.sel],2.2); });
+  P.append("div").attr("class","unc-key").html('<span><b>How sure is each number?</b> The line through each dot is its <b>95% confidence interval</b>: the true value is very likely inside it. Wide line = less certain (usually small tracts). <b>⚠</b> = among the widest 10% in Texas. <a href="#" class="toLim">Why estimates are uncertain →</a></span>');
+  P.selectAll(".toLim").on("click", e=>{ e.preventDefault(); showTab("about"); const t=document.getElementById("lim"); if(t) t.scrollIntoView({block:"start"}); });
   P.append("div").attr("class","note").html('<svg width="40" height="12"><line x1="2" x2="38" y1="6" y2="6" stroke="#1f2933" stroke-width="1.5"/><circle cx="20" cy="6" r="4" fill="#1f2933"/></svg> tract &amp; 95% CI &nbsp; <svg width="11" height="11"><rect x="1.5" y="1.5" width="8" height="8" fill="#6b7785" stroke="#fff"/></svg> '+cname(i)+' Co. &nbsp; <svg width="12" height="12"><path d="M6,1L11,6L6,11L1,6Z" fill="#fff" stroke="#015f64" stroke-width="1.6"/></svg> valley &nbsp; <svg width="8" height="13"><line x1="4" x2="4" y1="0" y2="13" stroke="#c2410c" stroke-width="2.4"/></svg> Texas &nbsp; <svg width="20" height="9"><rect width="20" height="9" fill="#eceff3"/></svg> '+(S.scope==="bv"?"valley range":"Texas 1st–99th pct.")+'');
   const groups=d3.groups(MEAS.filter(m=>!isNaN(V[m.id][i])), m=>m.group);
   const rh=18, lw=150, rw=104, w=440, pw=w-lw-rw; const n=d3.sum(groups,g=>g[1].length+1);
@@ -163,7 +168,9 @@ function drawRank(){
   const lw=250, xmax=d3.max(ids,i=>HI[m]? HI[m][i]: V[m][i]); const x=d3.scaleLinear().domain([0,Math.max(xmax,REF.tx[m])*1.04]).range([lw,RW-62]);
   const bh=(RH-28)/15;
   const g=sv.selectAll("g.bar").data(ids).join("g").attr("class","bar").attr("transform",(d,k)=>"translate(0,"+(4+k*bh)+")").style("cursor","pointer")
-    .on("mouseenter",(e,i)=>setHover(i,e)).on("mousemove",e=>moveTip(e)).on("mouseleave",()=>setHover(null)).on("click",(e,i)=>setSel(i));
+    .on("mouseenter",(e,i)=>setHover(i,e)).on("mousemove",e=>moveTip(e)).on("mouseleave",()=>setHover(null)).on("click",(e,i)=>setSel(i))
+    .attr("tabindex",0).attr("role","button").attr("aria-label",i=>tfull(i)+": "+pct(V[m][i])+(HI[m]?", 95% CI "+fmt1(LO[m][i])+" to "+fmt1(HI[m][i]):""))
+    .on("keydown",(e,i)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setSel(i,true); liveSay("Selected "+tfull(i)); } });
   g.append("rect").attr("class","hbg").attr("x",0).attr("width",RW).attr("height",bh).attr("fill","transparent");
   g.append("text").attr("x",lw-6).attr("y",bh*.64).attr("text-anchor","end").attr("font-size",11).attr("font-weight",i=>i===S.sel?700:400).text(i=>tname(i)+" · "+pname(i)+", "+cname(i));
   g.append("rect").attr("x",lw).attr("y",3).attr("height",bh-6).attr("width",i=>x(V[m][i])-lw).attr("fill",i=>sc(V[m][i])).attr("stroke",i=>S.hl&&S.hl.has(i)?HL:(i===S.sel?"#000":"none")).attr("stroke-width",1.5);

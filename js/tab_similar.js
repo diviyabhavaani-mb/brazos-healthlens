@@ -6,7 +6,11 @@ function peerDist(i,j){ let s=0; CORE.forEach(m=>{ const a=zc(m,i), b=zc(m,j); i
 const PEER_SM = ["DIABETES","BPHIGH","OBESITY","COPD","CHD","DEPRESSION","CSMOKING","LPA","ACCESS2","CHECKUP","BPMED","GHLTH"];
 let peerSet = null;
 const PEERCOL = "#3b2f4a";   // peers are a result list, not the brushed highlight: drawn as dark dots (blue stays reserved for the shared highlight)
-const PEER_MED = (()=>{ const r=d3.randomLcg(7); const d=[]; for(let k=0;k<1500;k++){ const a=ID_TX[Math.floor(r()*ID_TX.length)], b=ID_TX[Math.floor(r()*ID_TX.length)]; if(a!==b) d.push(peerDist(a,b)); } return d3.median(d); })();
+const PEER_SAMPLE = (()=>{ const r=d3.randomLcg(7); const d=[]; for(let k=0;k<1500;k++){ const a=ID_TX[Math.floor(r()*ID_TX.length)], b=ID_TX[Math.floor(r()*ID_TX.length)]; if(a!==b) d.push(peerDist(a,b)); } return d.sort(d3.ascending); })();
+const PEER_MED = d3.quantileSorted(PEER_SAMPLE, .5);
+// plain-language similarity: what share of random pairs of Texas tracts are further apart than this pair (feedback F10)
+function simWords(dist){ const share=d3.bisectLeft(PEER_SAMPLE, dist)/PEER_SAMPLE.length; const pctCloser=Math.round((1-share)*100);
+  return {pct:pctCloser, label: share<0.01? "very similar" : share<0.05? "similar" : share<0.2? "somewhat similar" : "not very similar"}; }
 function getPeers(){
   if(S.sel==null || !HAS[S.sel]) return [];
   const k=+d3.select("#peerK").property("value"); const out=d3.select("#peerOut").property("checked");
@@ -17,6 +21,9 @@ function getPeers(){
 }
 function peerPanels(){ const ms=PEER_SM.slice(); if(!ms.includes(S.measure)){ ms.unshift(S.measure); ms.pop(); } return ms; }
 function initSimilarTab(){
+  d3.select("#peerHow").html("<p>Every tract has 23 health measures (diseases, risk behaviors, care use, health status). We convert each to a Texas <b>z-score</b> (how far above or below the Texas average, in standard deviations) and flip care measures so higher always means worse.</p>"+
+    "<p><b>Distance</b> adds up the squared differences on all 23 measures and takes the square root (Euclidean distance). <b>0 = identical profiles</b>. Two random Texas tracts are typically "+fmt1(PEER_MED)+" apart. Each peer's label says how its distance compares with random pairs, e.g. <i>similar</i> = closer than 95% of random pairs.</p>"+
+    "<p>Peers share a health profile, not necessarily geography or demographics, so programs that worked in a peer place are worth a look. Measures that move together (e.g. diabetes and high blood pressure) count a little more in total.</p>");
   MAPS.peer = new MapView(document.getElementById("peerMap"), {height:330, name:"peer", focus:"scope", labels:true, countyK:0,
     color: i=> peerSet && peerSet.has(i)? "#8d84a0" : "#e3e7ec", markSet: ()=> peerSet, markColor: PEERCOL,
     selSet: ()=> S.sel!=null? [S.sel] : [],
@@ -25,11 +32,12 @@ function initSimilarTab(){
     L.append("div").attr("class","row").html('<svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="#000" stroke-width="2"/></svg> Selected tract');
     L.append("div").attr("class","row").html('<svg width="14" height="14"><rect x="1" y="1" width="12" height="12" fill="none" stroke="'+HL+'" stroke-width="2"/></svg> Highlighted group (shared)'); }
   d3.select("#peerK").on("input", function(){ d3.select("#peerKv").text(this.value); drawPeers({}); });
+  enableMapKeyboard(MAPS.peer, ()=> peerSet? [...peerSet] : [], ()=>"Map of the peers of "+(S.sel!=null? tname(S.sel) : "the selected tract"));
   d3.select("#peerOut").on("change", ()=>drawPeers({}));
   registerView("similar", ch=>{
-    if(ch.all||ch.sel||ch.scope||ch.measure) drawPeers(ch);
+    if(ch.all||ch.sel||ch.scope||ch.measure||ch.opts) drawPeers(ch);
     else if(ch.hl){ MAPS.peer.draw(); markPeerRows(); }
-    if(ch.all||ch.scope||ch.hl||ch.sel||ch.measure){ drawClCards(); drawClHeat(); drawOdd(); }
+    if(ch.all||ch.scope||ch.hl||ch.sel||ch.measure||ch.opts){ drawClCards(); drawClHeat(); drawOdd(); }
     if(ch.hover && !(ch.all||ch.sel||ch.scope||ch.measure)){ MAPS.peer.drawTop(); markPeerRows(); } });
 }
 function markPeerRows(){ d3.selectAll("#peerList tr.r").classed("on",j=>j===S.hover).classed("hlrow", j=>!!(S.hl && S.hl.has(j))); }
@@ -52,8 +60,8 @@ function drawPeers(ch){
   const hr=L.append("tr"); ["#","Tract","County","Profile","Dist."].forEach(t=>hr.append("th").text(t));
   peers.forEach((j,k)=>{ const tr=L.append("tr").datum(j).attr("class","r").on("mouseenter",e=>setHover(j,e)).on("mousemove",moveTip).on("mouseleave",()=>setHover(null)).on("click",()=>setSel(j));
     tr.append("td").text(k+1); tr.append("td").html("<b>"+TR.tract[j]+"</b> <span class='note'>"+pname(j)+"</span>"); tr.append("td").text(cname(j)+(IN_BV[j]?" ★":""));
-    tr.append("td").html("<span class='clpill' style='background:"+CLCOL[CL[j]]+";color:"+CLTXT[CL[j]]+"' title='"+clName(CL[j])+"'>"+(CL[j]+1)+"</span>"); tr.append("td").text(fmt2(peerDist(i,j))); });
-  L.append("tr").append("td").attr("colspan",5).attr("class","note").html("★ = Brazos Valley tract. Blue row = also in the shared highlighted group. Distance = Euclidean on 23 z-scores (0 = identical; median distance between two random Texas tracts = "+fmt1(PEER_MED)+"). Click a row to make that tract the selection.");
+    tr.append("td").html("<span class='clpill' style='background:"+CLCOL[CL[j]]+";color:"+CLTXT[CL[j]]+"' title='"+clName(CL[j])+"'>"+(CL[j]+1)+"</span>"); { const dd=peerDist(i,j), sw=simWords(dd); tr.append("td").html(fmt1(dd)+"<div class='simlabel'>"+sw.label+"</div>").attr("title","Closer than "+sw.pct+"% of random pairs of Texas tracts"); } });
+  L.append("tr").append("td").attr("colspan",5).attr("class","note").html("★ = Brazos Valley tract. Blue row = also in the shared highlighted group. Distance = Euclidean on 23 z-scores (0 = identical; two random Texas tracts are typically "+fmt1(PEER_MED)+" apart). Label = how it compares with random pairs (see “What does similar mean?”). Click a row to make that tract the selection.");
   markPeerRows();
   MAPS.peer.draw();
   // small multiples (focus measure first)

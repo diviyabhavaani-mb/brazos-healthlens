@@ -80,13 +80,16 @@ def main():
     ap.add_argument("--ruca", default=C.RUCA_FILE)
     ap.add_argument("--geo", default=C.TRACT_GEO_CSV)
     ap.add_argument("--out", default=C.DATA / "healthlens_data.js")
-    ap.add_argument("--retrieved", default=None, help="date the PLACES file was downloaded (default: file date)")
+    ap.add_argument("--retrieved", default=None, help="date the PLACES file was downloaded (default: provenance or file date)")
+    ap.add_argument("--provenance", default=C.RAW / "provenance.json", help="written by download.py")
     a = ap.parse_args()
 
     geo = pd.read_csv(a.geo, dtype={"GEOID": str, "CO": str, "tract": str, "place": str}).fillna({"place": ""})
     gids = geo["GEOID"].tolist()
     N = len(gids)
     P = load_places(a.places)
+    if not Path(a.ruca).exists() and Path(a.ruca).with_suffix(".csv").exists():   # RUCA reused by download.py
+        a.ruca = Path(a.ruca).with_suffix(".csv")
     ruca = load_ruca(a.ruca)
     print(f"{N:,} map tracts · {P['gid'].nunique():,} tracts with PLACES rows · {len(ruca):,} RUCA codes")
 
@@ -168,10 +171,15 @@ def main():
 
     aland = pd.to_numeric(geo.get("aland_sqmi"), errors="coerce").to_numpy(float) if "aland_sqmi" in geo else np.full(N, np.nan)
     dens = np.where(aland > 0, pop / aland, np.nan)
-    retrieved = a.retrieved or dt.date.fromtimestamp(Path(a.places).stat().st_mtime).isoformat()
+    prov = json.loads(Path(a.provenance).read_text()) if Path(a.provenance).exists() else {}
+    retrieved = a.retrieved or (prov.get("retrieved") or "")[:10] or dt.date.fromtimestamp(Path(a.places).stat().st_mtime).isoformat()
+    release = prov.get("release") or C.PLACES_RELEASE
+    dataset = prov.get("dataset") or C.PLACES_DATASET
 
     out = {
-        "meta": {"source": C.SOURCE_TEXT, "dataset": C.PLACES_DATASET, "url": C.PLACES_URL.replace(".csv", ""), "retrieved": retrieved,
+        "meta": {"source": C.SOURCE_TEXT.replace(str(C.PLACES_RELEASE), str(release)), "dataset": dataset,
+                 "url": f"https://data.cdc.gov/resource/{dataset}", "retrieved": retrieved, "release": release,
+                 "built": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "ruca_source": prov.get("ruca_source", "file"),
                  "years": {m: int(years.get(m, 2023)) for m in MIDS}, "geometry": C.GEOMETRY_TEXT, "ruca": C.RUCA_TEXT,
                  "ntx": int(len(tx)), "ngeom": N, "nbv": int(len(bv)), "core": C.CORE, "burden": C.BURDEN, "care": C.CARE,
                  "npc": npc, "K": K, "sil": sil, "ari": ari, "ru_names": C.RU_NAMES,

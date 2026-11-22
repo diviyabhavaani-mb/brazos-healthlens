@@ -77,4 +77,36 @@ function initSurveyTab(){
   d3.select("#svCaveat").html("<b>Limits of this evidence.</b> Six respondents is a small, convenience sample, so counts show direction, not proportions of any population. Options were mapped to requirements by the team before analysis (see <code>pipeline/survey_summary.py</code>). R5 has the weakest support (2 of 6). All five requirements will be checked again in think-aloud sessions with the finished tool.");
   RSTAT.survey={n, reqs:SURVEY.requirements.map(r=>r.id+":"+r.n_supporters), cards:d3.selectAll("#svReqs .reqcard").size(), qs:d3.selectAll("#svQs .q").size()};
 }
-INITS.survey = initSurveyTab;
+// ---------- evaluation: the prototype feedback survey (data/feedback_summary.js) ----------
+const FB = window.HL_FEEDBACK;
+function drawFeedback(){
+  if(!FB) return; const n=FB.n, M=FB.metrics;
+  const roles=M.Q1.counts.map(c=>c.n+" "+c.option.toLowerCase().replace("public health ","").replace(" or faculty member","/faculty")).join(", ");
+  d3.select("#fbIntro").html(n+" people used the live prototype and answered a 17-question feedback survey ("+roles+"). Left: how many could do each task and how they rated it. Right: what their comments asked for, coded into themes; the table lists the change we made for each theme.");
+  // task outcomes as 100% stacked bars
+  const Q=[["Q4","Found & selected a place on the map",["Yes"]],["Q7","Found a high-burden, low-care area",["Yes"]],["Q5","Parallel coordinates showed a relationship",["Yes","Somewhat"]],
+           ["Q6","Peer finder made sense",["Yes","Somewhat"]],["Q8","Uncertainty marks changed interpretation",["Yes"]],["Q9","Tried the guided story",["Yes"]],
+           ["Q13","Could read the map colors",["Yes","Mostly"]],["Q14","Amount of information manageable",["Manageable"]],["Q15","Would change how they work",["Yes","Probably"]]];
+  const W=560, rowH=26, lw=250, H=Q.length*rowH+70, sv=d3.select("#fbTasks").attr("viewBox",[0,0,W,H]); sv.selectAll("*").remove();
+  const x=d3.scaleLinear().domain([0,n]).range([lw,W-40]);
+  const good=o=>/^(Yes|Manageable)$/.test(o), mid=o=>/^(Somewhat|Mostly|Probably)$/.test(o);
+  const colr=o=> good(o)? "#13807a" : mid(o)? "#8fc7c1" : "#d9a38f";
+  sv.append("text").attr("x",0).attr("y",14).attr("font-size",12.5).attr("font-weight",700).text("Task outcomes (n = "+n+")");
+  Q.forEach(([q,lab],k)=>{ const y=26+k*rowH, cs=(M[q].counts||[]).slice().sort((a,b)=>(good(b.option)-good(a.option))||(mid(b.option)-mid(a.option))); let acc=0;
+    sv.append("text").attr("x",lw-8).attr("y",y+15).attr("text-anchor","end").attr("font-size",11.5).text(lab);
+    cs.forEach(c=>{ const g=sv.append("g"); g.append("rect").attr("x",x(acc)).attr("y",y+3).attr("width",Math.max(0,x(acc+c.n)-x(acc)-1)).attr("height",rowH-8).attr("fill",colr(c.option)).append("title").text(c.option+": "+c.n);
+      if(x(acc+c.n)-x(acc)>16) g.append("text").attr("x",x(acc)+(x(acc+c.n)-x(acc))/2).attr("y",y+16).attr("text-anchor","middle").attr("font-size",10.5).attr("fill",good(c.option)?"#fff":"#1f2933").text(c.n); acc+=c.n; }); });
+  const ly=26+Q.length*rowH+12; const LX=[60,215,400]; [["#13807a","Yes / manageable"],["#8fc7c1","Somewhat / mostly / probably"],["#d9a38f","No / didn't notice / overwhelmed"]].forEach(([c,t],k)=>{ sv.append("rect").attr("x",LX[k]-60).attr("y",ly).attr("width",11).attr("height",11).attr("fill",c); sv.append("text").attr("x",LX[k]-45).attr("y",ly+9.5).attr("font-size",10).text(t); });
+  sv.append("text").attr("x",0).attr("y",ly+28).attr("font-size",11.5).html("Understood the purpose in the first minute: <tspan font-weight='700'>"+M.Q3.mean+" / 5</tspan> · guided story usefulness: <tspan font-weight='700'>"+M.Q9a.mean+" / 5</tspan> (n = "+M.Q9a.n+")");
+  // themes
+  const T=FB.themes.filter(t=>t.n>0), W2=520, H2=T.length*22+30, s2=d3.select("#fbThemes").attr("viewBox",[0,0,W2,H2]); s2.selectAll("*").remove();
+  const x2=d3.scaleLinear().domain([0,n]).range([270,W2-30]);
+  s2.append("text").attr("x",0).attr("y",14).attr("font-size",12.5).attr("font-weight",700).text("What comments asked for (respondents per theme)");
+  T.forEach((t,k)=>{ const y=24+k*22; s2.append("text").attr("x",262).attr("y",y+14).attr("text-anchor","end").attr("font-size",11.5).text(t.label);
+    s2.append("rect").attr("x",270).attr("y",y+3).attr("width",x2(t.n)-270).attr("height",15).attr("fill","#c8552e").append("title").text(t.respondents.join(", "));
+    s2.append("text").attr("x",x2(t.n)+4).attr("y",y+14).attr("font-size",10.5).text(t.n); });
+  const C=d3.select("#fbChanges").html(""); const hr=C.append("tr"); ["Theme","Respondents","What we changed in the final version"].forEach(t=>hr.append("th").text(t));
+  T.forEach(t=>{ const tr=C.append("tr"); tr.append("td").html("<b>"+t.label+"</b>"); tr.append("td").text(t.n+" ("+t.respondents.join(", ")+")"); tr.append("td").text(t.change); });
+  RSTAT.feedback={n, themes:T.length};
+}
+INITS.survey = ()=>{ initSurveyTab(); drawFeedback(); };

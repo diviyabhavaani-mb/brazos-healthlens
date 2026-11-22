@@ -13,7 +13,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-TABS = ["map", "compare", "similar", "gap", "survey", "about"]
+TABS = ["overview", "map", "compare", "similar", "gap", "survey", "about"]
 HEARNE = "48395960501"
 
 
@@ -58,6 +58,9 @@ def main():
         check(rs.get("survey", {}).get("cards") == 5, "five requirement cards")
         check(rs.get("gap", {}).get("hh", 0) > 0, "care-gap list has tracts")
         check(rs.get("odd", {}).get("n") == 15, "unusual-for-group table has 15 rows")
+        check(pg.evaluate("document.querySelectorAll('#ovFlow .ovnode').length") >= 4, "overview flow diagram has the five views")
+        check(pg.evaluate("document.querySelectorAll('#fbTasks rect').length > 5 && document.querySelectorAll('#fbThemes rect').length > 5"), "feedback results charts drawn")
+        check("PLACES" in pg.inner_text("#prov"), "data provenance shown in the header")
 
         print("linking")
         pg.evaluate(f"{api}.showTab('map'); {api}.setSel({api}.GIDX.get('{HEARNE}'), true)")
@@ -81,10 +84,35 @@ def main():
         check(pg.evaluate("document.querySelectorAll('#searchres div').length") > 0, "search finds Hearne")
         pg.click("#resetBtn")
 
+        print("presets, pins, exports, links")
+        pg.evaluate(f"{api}.setScope('bv'); {api}.showTab('compare'); {api}.setPCPPreset('bp')")
+        pg.wait_for_timeout(300)
+        check(pg.evaluate("document.querySelectorAll('#pcpWrap .pcp-axis').length") == 7, "blood-pressure preset shows 7 axes")
+        pg.evaluate(f"{api}.togglePin({api}.GIDX.get('{HEARNE}')); {api}.togglePin({api}.GIDX.get('48041000501'))")
+        pg.evaluate(f"{api}.showTab('map')")
+        pg.wait_for_timeout(300)
+        check(pg.evaluate("document.querySelectorAll('#pinTable tr').length") >= 3, "two pinned tracts compared in a table")
+        with pg.expect_download() as dl:
+            pg.evaluate(f"{api}.exportCSV()")
+        csv = Path(dl.value.path()).read_text(encoding="utf-8-sig")
+        check(csv.startswith("#") and "BPHIGH" in csv and len(csv.splitlines()) >= 4, "CSV export has header notes, measures and rows")
+        h = pg.evaluate(f"{api}.stateToHash()")
+        check("pins=" in h and "axes=bp" in h and "tab=map" in h, "share link encodes tab, pins and axes")
+        pg2 = br.new_page(viewport={"width": 1500, "height": 1000})
+        pg2.on("pageerror", lambda e: errors.append(str(e)))
+        pg2.goto((ROOT / "index.html").as_uri() + h)
+        pg2.wait_for_function("window.__ready === true", timeout=30000)
+        check(pg2.evaluate(f"{api}.S.tab") == "map" and pg2.evaluate(f"{api}.S.pins.length") == 2, "opening a shared link restores the view")
+        pg2.close()
+        pg.evaluate(f"{api}.setPalette(true)")
+        check(pg.evaluate("document.body.classList.contains('hc')"), "high-contrast palette switches on")
+        pg.evaluate(f"{api}.setPalette(false)")
+        pg.click("#resetBtn")
+
         print("guided story")
         k = pg.evaluate(f"{api}.STORY.length")
-        check(k == 7, "seven story steps")
-        expect = ["map", "map", "map", "compare", "similar", "map", "gap"]
+        check(k == 8, "eight story steps")
+        expect = ["overview", "map", "map", "map", "compare", "similar", "gap", "gap"]
         for s in range(k):
             pg.evaluate(f"{api}.storyGo({s})")
             pg.wait_for_timeout(900)
@@ -93,6 +121,7 @@ def main():
             check(st["tab"] == expect[s] and "NaN" not in body and "undefined" not in body, f"step {s+1} on {st['tab']}")
             if shots:
                 pg.screenshot(path=str(shots / f"story_{s+1}.png"))
+        check(pg.evaluate("document.querySelectorAll('#stBody table tr').length") >= 3, "recap lists the outreach tracts")
         pg.click("#storyX")
         br.close()
 
